@@ -1,72 +1,90 @@
-provider "vsphere" {
-  user                 = "yna"
-  password             = "2a2DXWrgt9tD35"
-  vsphere_server       = "vc-vstack-017-lab.virtualstack.tn"
-  allow_unverified_ssl = true
-}
-
-data "vsphere_datacenter" "datacenter" {
-  name = var.datacenter
-}
-data "vsphere_datastore" "datastore" {
-  name          = var.datastore
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-data "vsphere_compute_cluster" "cluster" {
-  name          = var.cluster
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-data "vsphere_network" "network" {
-  name          = var.network_name
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-
-
-data "vsphere_virtual_machine" "template" {
-  name          = var.template
-  datacenter_id = data.vsphere_datacenter.datacenter.id
-}
-
-resource "vsphere_virtual_machine" "vm" {
-  name             = "R VM W"
-  resource_pool_id = data.vsphere_compute_cluster.cluster.resource_pool_id
-  folder = "yoldez nouira"
-  datastore_id     = data.vsphere_datastore.datastore.id
-  
-  guest_id     = "Windows_64Guest"
-  num_cpus = 4
-  memory   = 400
-  clone {
-     template_uuid = data.vsphere_virtual_machine.template.id
-     customize {
-      windows_options {
-        computer_name = "vmt"
-      }
-      network_interface {
-        ipv4_address = "10.2.1.30"
-        ipv4_netmask = 24
-        dns_server_list = ["8.8.8.8"]  
-      }
-      
-    ipv4_gateway = "10.2.1.254"
+terraform {
+  required_providers {
+    vsphere = {
+      source = "hashicorp/vsphere"
+      version = "2.1.1"
     }
   }
-   network_interface {
-    network_id   = data.vsphere_network.network.id
-    adapter_type = "vmxnet3" 
+}
+
+#Provider settings
+provider "vsphere" {
+  user 			= var.vsphere_user
+  password		= var.vsphere_password
+  vsphere_server	= var.vsphere_server
+  allow_unverified_ssl	= true
+}
+
+#Data sources
+
+data "vsphere_datacenter" "dc" {
+  name = var.vsphere_datacenter
+}
+
+data "vsphere_host" "hosts" {
+  name			= var.vsphere_host
+  datacenter_id		= data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_compute_cluster" "compute_cluster" {
+  name			= var.vsphere_compute_cluster
+  datacenter_id		= data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_datastore" "datastore" {
+  name			= var.vsphere_datastore
+  datacenter_id         = data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_network" "network" {
+  name			= var.vsphere_network
+  datacenter_id		= data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_virtual_machine" "template" {
+  name			= var.vm_template_name
+  datacenter_id         = data.vsphere_datacenter.dc.id
+}
+
+#Resource
+resource "vsphere_virtual_machine" "vm" {
+  for_each 		= var.vms
+
+  datastore_id		= data.vsphere_datastore.datastore.id
+  resource_pool_id	= data.vsphere_compute_cluster.compute_cluster.resource_pool_id
+  guest_id		= var.vm_guest_id
+
+  network_interface {
+    network_id 		= data.vsphere_network.network.id
+    adapter_type = data.vsphere_virtual_machine.template.network_interface_types[0]
   }
- 
+
+  name 			= each.value.name
+  
+  num_cpus 		= var.vm_vcpu
+  memory		= var.vm_memory
+  firmware		= var.vm_firmware 
   disk {
-  label = "disk0"
-  size  = 50
-  thin_provisioned = false
- 
+    label		= var.vm_disk_label
+    size		= var.vm_disk_size
+    thin_provisioned	= var.vm_disk_thin
   }
- 
- cdrom {
-   datastore_id     = data.vsphere_datastore.datastore.id
-    path = "ISO/Windows-Server-2022.ISO"
-}
-}
+
+  clone {
+    template_uuid       = data.vsphere_virtual_machine.template.id
+    customize {
+      windows_options {
+        computer_name       = each.value.name
+      
+    }
+    network_interface {
+      ipv4_address	= each.value.vm_ip
+      ipv4_netmask	= var.vm_ipv4_netmask
+      dns_server_list	= var.vm_dns_servers
+    }
+    ipv4_gateway = var.vm_ipv4_gateway
+   }
+  }
+ }
 
 
